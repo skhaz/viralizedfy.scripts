@@ -13,6 +13,8 @@ except ImportError:
   import json
 
 
+residuous = (Path.cwd() / 'residuous.txt').read_text().splitlines()
+
 jinja2_env = Environment(loader=BaseLoader(), trim_blocks=True)
 
 base = Template('''---
@@ -28,11 +30,11 @@ draft: false
 ''')
 
 tags = '''
-![{{ title }}]({{ filename }})
+![{{ title }}]({{ media }})
 ---
-`audio: title: {{ filename }}`
+`audio: title: {{ media }}`
 ---
-`video: title: {{ title|tojson }}: {{ filename }}`
+`video: title: {{ title|tojson }}: {{ media }}`
 '''.split(
   '---'
 )
@@ -46,16 +48,17 @@ templates = {
     ).items()
 }
 
-residuous = (Path.cwd() / 'residuous.txt').read_text().splitlines()
-
 
 def render(context):
-  content = context['content']
-  del context['content']
-  [r for r in residuous if (content := content.replace(r, ''))]
 
-  context['filename'] = context['media']
+  def _clean(field):
+    value = context[field]
+    del context[field]
+    [r for r in residuous if (value := value.replace(r, ''))]
+    return value
 
+  title = _clean('title')
+  content = _clean('title')
   kind, _ = context['mimetype'].split('/')
   template = templates[kind]
   result = jinja2_env.from_string(template).render(base=base, content=content, **context)
@@ -72,17 +75,8 @@ def run(directory):
     return
 
   files = {p for p in path.glob('*.json')} or [path]
-  [
-    *map(
-      render,
-      itertools.chain(
-        *map(
-          lambda f: json.loads(f.read_text()),
-          files,
-        )
-      ),
-    )
-  ]
+  dataset = itertools.chain(*map(lambda f: json.loads(f.read_text()), files,))
+  [*map(render, dataset)]
 
 
 if __name__ == '__main__':
