@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+import re
+import functools
+import itertools
+from pathlib import Path
+
+import click
+from jinja2 import Environment, BaseLoader, Template
+
+try:
+  import ujson as json
+except ImportError:
+  import json
+
+
+jinja2_env = Environment(loader=BaseLoader(), trim_blocks=True)
+
+base = Template('''---
+path: "{{ guid }}"
+title: "{{ title }}"
+date: "2019-05-04"
+tags: ["whatsapp"]
+draft: false
+---
+
+{{ content }}
+
+''')
+
+tags = '''
+![{{ title }}]({{ filename }})
+---
+`audio: title: {{ filename }}`
+---
+`video: title: {{ title|tojson }}: {{ filename }}`
+'''.split(
+  '---'
+)
+
+templates = {
+  key: f'{{% include base %}}\n{value}'
+    for key, value in dict(
+      image=tags[0],
+      audio=tags[1],
+      video=tags[2],
+    ).items()
+}
+
+residuous = (Path.cwd() / 'residuous.txt').read_text().splitlines()
+
+
+def render(context):
+  content = context['content']
+  del context['content']
+  [r for r in residuous if (content := content.replace(r, ''))]
+
+  context['filename'] = context['media']
+
+  kind, _ = context['mimetype'].split('/')
+  template = templates[kind]
+  result = jinja2_env.from_string(template).render(base=base, content=content, **context)
+
+  filepath = Path.cwd() / f'{context["guid"]}.md'
+  filepath.write_text(result)
+
+
+@click.command()
+@click.option('-d', '--directory', required=True)
+def run(directory):
+  path = Path(directory).resolve()
+  if not path.exists():
+    return
+
+  files = {p for p in path.glob('*.json')} or [path]
+  [
+    *map(
+      render,
+      itertools.chain(
+        *map(
+          lambda f: json.loads(f.read_text()),
+          files,
+        )
+      ),
+    )
+  ]
+
+
+if __name__ == '__main__':
+  run()
